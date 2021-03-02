@@ -1,5 +1,5 @@
 #
-# For use all Virtual Machines required 4.5 GB RAM
+# For use all Virtual Machines required 6 GB RAM
 #
 
 Vagrant.configure("2") do |config|
