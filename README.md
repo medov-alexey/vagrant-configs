@@ -1,1 +1,1 @@
-# vagrant-configs
+Examples configurations for use Vagrant
