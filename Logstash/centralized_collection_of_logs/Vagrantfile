@@ -1,0 +1,222 @@
+#
+# For use all Virtual Machines required 4.5 GB RAM
+#
+
+Vagrant.configure("2") do |config|
+
+  config.ssh.insert_key = false
+
+# ---------------- webserver1 ------------------------------------------------------------------
+
+  config.vm.define "webserver1" do |webserver1|
+                webserver1.vm.hostname = "webserver1"
+                webserver1.vm.box = "ubuntu/bionic64"
+                webserver1.vm.network "private_network", ip: "172.16.0.51"
+
+        webserver1.vm.provider "virtualbox" do |vb|
+                vb.name = "webserver1"
+                vb.cpus = 1
+                vb.memory = "1536"
+        end
+
+        webserver1.vm.provision "shell", inline: <<-SHELL
+                wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+                echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+		apt-get update
+		apt-get install htop apt-transport-https logstash apache2 -y
+                echo "input {"                                     >> /etc/logstash/conf.d/logstash.conf
+                echo "  file {"                                    >> /etc/logstash/conf.d/logstash.conf
+                echo '    path => "/var/log/apache2/access.log"'   >> /etc/logstash/conf.d/logstash.conf
+                echo '    start_position => "beginning"'           >> /etc/logstash/conf.d/logstash.conf
+                echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+                echo "}"                                           >> /etc/logstash/conf.d/logstash.conf
+                echo ""                                            >> /etc/logstash/conf.d/logstash.conf
+                echo "output {"                                    >> /etc/logstash/conf.d/logstash.conf
+                echo "   tcp {"                                    >> /etc/logstash/conf.d/logstash.conf
+                echo '     mode => "client"'                       >> /etc/logstash/conf.d/logstash.conf
+                echo '     host => "172.16.0.10"'                  >> /etc/logstash/conf.d/logstash.conf
+                echo '     port => "5000"'                         >> /etc/logstash/conf.d/logstash.conf
+                echo '     codec => "line"'                        >> /etc/logstash/conf.d/logstash.conf
+                echo "   }"                                        >> /etc/logstash/conf.d/logstash.conf
+                echo "}"                                           >> /etc/logstash/conf.d/logstash.conf
+		systemctl enable logstash apache2
+		systemctl restart logstash apache2
+		chmod 755 /var/log/apache2
+		chmod 644 -R /var/log/apache2/*
+        SHELL
+  end
+
+# ---------------- webserver2 ---------------------------------------------------------------
+
+  config.vm.define "webserver2" do |webserver2|
+                webserver2.vm.hostname = "webserver2"
+                webserver2.vm.box = "ubuntu/bionic64"
+                webserver2.vm.network "private_network", ip: "172.16.0.52"
+
+        webserver2.vm.provider "virtualbox" do |vb|
+                vb.name = "webserver2"
+                vb.cpus = 1
+                vb.memory = "256"
+        end
+
+        webserver2.vm.provision "shell", inline: <<-SHELL
+                apt-get update
+                apt-get install htop nginx -y
+		echo "events {"                                      > /etc/nginx/nginx.conf
+		echo "	worker_connections 1024;"                   >> /etc/nginx/nginx.conf
+		echo "}"                                            >> /etc/nginx/nginx.conf
+		echo ""                                             >> /etc/nginx/nginx.conf
+		echo "http {"                                       >> /etc/nginx/nginx.conf
+		echo "	include /etc/nginx/mime.types;"             >> /etc/nginx/nginx.conf
+		echo "	include /etc/nginx/conf.d/*.conf;"          >> /etc/nginx/nginx.conf
+		echo "	include /etc/nginx/sites-enabled/default;"  >> /etc/nginx/nginx.conf
+		echo "	default_type application/octet-stream;"     >> /etc/nginx/nginx.conf
+		echo "	access_log syslog:server=172.16.0.10:6000;" >> /etc/nginx/nginx.conf
+		echo "}" >> /etc/nginx/nginx.conf
+		systemctl restart nginx
+		systemctl enable nginx
+        SHELL
+  end
+
+# ---------------- dockerserver -------------------------------------------------------------------
+
+  config.vm.define "dockerserver" do |dockerserver|
+                dockerserver.vm.hostname = "dockerserver"
+                dockerserver.vm.box = "ubuntu/bionic64"
+                dockerserver.vm.network "private_network", ip: "172.16.0.40"
+
+
+        dockerserver.vm.provider "virtualbox" do |vb|
+                vb.name = "dockerserver"
+                vb.cpus = 1
+                vb.memory = "512"
+        end
+
+        dockerserver.vm.provision "shell", inline: <<-SHELL
+                apt-get update
+                apt-get install htop -y
+	        curl -fsSL https://get.docker.com/ | sh
+		systemctl start docker
+		systemctl enable docker
+		usermod -aG docker $(whoami)
+		usermod -aG docker vagrant
+		docker run -d --restart=always --log-driver gelf --log-opt gelf-address=udp://172.16.0.10:12201 --name mysql -e MYSQL_ROOT_PASSWORD=securepassword mariadb:latest
+        SHELL
+  end
+
+# ---------------- logstashserver -------------------------------------------------------------------
+
+  config.vm.define "logstashserver" do |logstashserver|
+                logstashserver.vm.hostname = "logstashserver"
+                logstashserver.vm.box = "ubuntu/bionic64"
+                logstashserver.vm.network "private_network", ip: "172.16.0.10"
+
+        logstashserver.vm.provider "virtualbox" do |vb|
+                vb.name = "logstashserver"
+                vb.cpus = 1
+                vb.memory = "1536"
+        end
+
+        logstashserver.vm.provision "shell", inline: <<-SHELL
+		wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+		echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+                apt-get update
+                apt-get install htop apt-transport-https logstash -y
+		echo "input {"                                     >> /etc/logstash/conf.d/logstash.conf
+		echo "  tcp {"                                     >> /etc/logstash/conf.d/logstash.conf
+		echo '    mode => "server"'                        >> /etc/logstash/conf.d/logstash.conf
+		echo '    port => "5000"'                          >> /etc/logstash/conf.d/logstash.conf
+		echo '    codec => "line"'                         >> /etc/logstash/conf.d/logstash.conf
+		echo '    tags => "apache"'                        >> /etc/logstash/conf.d/logstash.conf
+		echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+		echo ""                                            >> /etc/logstash/conf.d/logstash.conf
+		echo "  syslog {"                                  >> /etc/logstash/conf.d/logstash.conf
+		echo "    port => 6000"                            >> /etc/logstash/conf.d/logstash.conf
+		echo '    tags => "nginx"'                         >> /etc/logstash/conf.d/logstash.conf
+		echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+		echo ""                                            >> /etc/logstash/conf.d/logstash.conf
+                echo "  gelf {"                                    >> /etc/logstash/conf.d/logstash.conf
+                echo "    port => 12201"                           >> /etc/logstash/conf.d/logstash.conf
+                echo '    tags => "docker"'                        >> /etc/logstash/conf.d/logstash.conf
+                echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+		echo "}"                                           >> /etc/logstash/conf.d/logstash.conf
+		echo ""                                            >> /etc/logstash/conf.d/logstash.conf
+		echo "output {"                                    >> /etc/logstash/conf.d/logstash.conf
+		echo 'if "apache" in [tags] {'                     >> /etc/logstash/conf.d/logstash.conf 
+		echo "    elasticsearch {"                         >> /etc/logstash/conf.d/logstash.conf
+		echo '      hosts => ["http://172.16.0.20:9200"]'  >> /etc/logstash/conf.d/logstash.conf
+		echo '      index => "apache-index"'               >> /etc/logstash/conf.d/logstash.conf
+		echo "    }"                                       >> /etc/logstash/conf.d/logstash.conf
+		echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+                echo 'if "nginx" in [tags] {'                      >> /etc/logstash/conf.d/logstash.conf
+                echo "    elasticsearch {"                         >> /etc/logstash/conf.d/logstash.conf
+                echo '      hosts => ["http://172.16.0.20:9200"]'  >> /etc/logstash/conf.d/logstash.conf
+                echo '      index => "nginx-index"'                >> /etc/logstash/conf.d/logstash.conf
+                echo "    }"                                       >> /etc/logstash/conf.d/logstash.conf
+                echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+                echo 'if "docker" in [tags] {'                     >> /etc/logstash/conf.d/logstash.conf
+                echo "    elasticsearch {"                         >> /etc/logstash/conf.d/logstash.conf
+                echo '      hosts => ["http://172.16.0.20:9200"]'  >> /etc/logstash/conf.d/logstash.conf
+                echo '      index => "docker-index"'               >> /etc/logstash/conf.d/logstash.conf
+                echo "    }"                                       >> /etc/logstash/conf.d/logstash.conf
+                echo "  }"                                         >> /etc/logstash/conf.d/logstash.conf
+		echo "}"                                           >> /etc/logstash/conf.d/logstash.conf
+		systemctl enable logstash
+		systemctl start logstash
+        SHELL
+  end
+
+# ---------------- elasticserver -------------------------------------------------------------------
+
+  config.vm.define "elasticserver" do |elasticserver|
+                elasticserver.vm.hostname = "elasticserver"
+                elasticserver.vm.box = "ubuntu/bionic64"
+                elasticserver.vm.network "private_network", ip: "172.16.0.20"
+
+        elasticserver.vm.provider "virtualbox" do |vb|
+                vb.name = "elasticserver"
+                vb.cpus = 1
+                vb.memory = "1536"
+        end
+
+        elasticserver.vm.provision "shell", inline: <<-SHELL
+                wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+                echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+		apt-get update
+                apt-get install htop apt-transport-https elasticsearch -y
+		echo "discovery.type: single-node" >> /etc/elasticsearch/elasticsearch.yml
+		echo "network.host: '_local_,_site_'" >> /etc/elasticsearch/elasticsearch.yml
+		systemctl enable elasticsearch
+		systemctl restart elasticsearch
+        SHELL
+  end
+
+# ---------------- kibanaserver -------------------------------------------------------------------
+
+  config.vm.define "kibanaserver" do |kibanaserver|
+                kibanaserver.vm.hostname = "kibanaserver"
+                kibanaserver.vm.box = "ubuntu/bionic64"
+                kibanaserver.vm.network "private_network", ip: "172.16.0.30"
+		kibanaserver.vm.network "public_network", bridge: "wlp2s0", ip: "192.168.168.150"
+
+        kibanaserver.vm.provider "virtualbox" do |vb|
+                vb.name = "kibanaserver"
+                vb.cpus = 1
+                vb.memory = "512"
+        end
+
+        kibanaserver.vm.provision "shell", inline: <<-SHELL
+                wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+                echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+                apt-get update
+                apt-get install htop apt-transport-https kibana -y
+		echo "elasticsearch.hosts: ["http://172.16.0.20:9200"]" >> /etc/kibana/kibana.yml
+		echo "server.host: "0.0.0.0"" >> /etc/kibana/kibana.yml
+                systemctl enable kibana
+                systemctl start kibana
+        SHELL
+  end
+
+# ----------------------------------------------------------------------------------------
+
+end
