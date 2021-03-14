@@ -46,7 +46,7 @@ Vagrant.configure("2") do |config|
 		echo "			'\\"RequestBody\\":\\"\\$request_body\\",'"                      >> /etc/nginx/nginx.conf
 		echo "			'\\"ResponseStatus\\":\\"\\$status\\",'"                         >> /etc/nginx/nginx.conf
 		echo "			'\\"Upstream\\":\\"\\$upstream_addr\\",'"                        >> /etc/nginx/nginx.conf
-		echo "			'\\"UpstreamPath\\":\\"\\$request_uri\\",'"                      >> /etc/nginx/nginx.conf
+		echo "			'\\"UpstreamPath\\":\\"\\$uri\\",'"                              >> /etc/nginx/nginx.conf
 		echo "			'\\"UpstreamResponseTime\\":\\"\\$upstream_response_time\\"'"    >> /etc/nginx/nginx.conf
 		echo "		'}';"                                                            >> /etc/nginx/nginx.conf
 		echo ""                                                                          >> /etc/nginx/nginx.conf
