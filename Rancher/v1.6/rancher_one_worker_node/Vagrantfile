@@ -1,0 +1,66 @@
+Vagrant.configure("2") do |config|
+
+  config.ssh.insert_key = false
+
+# ---------------- RANCHER ------------------------------------------------------------------
+
+  config.vm.define "rancher" do |rancher|
+                rancher.vm.hostname = "rancher"
+                rancher.vm.box = "ubuntu/xenial64"
+                rancher.vm.network "private_network", ip: "10.10.172.10"
+                rancher.vm.network "public_network", bridge: "wlp2s0", ip: "192.168.168.80"
+
+        rancher.vm.provider "virtualbox" do |vb|
+                vb.name = "rancher"
+                vb.cpus = 2
+                vb.memory = "2048"
+        end
+
+        rancher.vm.provision "shell", inline: <<-SHELL
+		apt-get update
+		sudo apt-get install apt-transport-https ca-certificates curl gnupg-agent software-properties-common htop -y
+		curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+		sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+		sudo apt-get update
+		sudo apt-get install docker-ce docker-ce-cli containerd.io -y
+                echo "10.10.172.10 rancher.int" >> /etc/hosts
+		systemctl start docker
+		systemctl enable docker
+		usermod -aG docker $(whoami)
+		docker images -a
+		docker run -d --restart=unless-stopped -p 80:8080 rancher/server:stable
+		docker images -a
+        SHELL
+  end
+
+# ---------------- NODE 1 -------------------------------------------------------------------
+
+  config.vm.define "server1" do |server1|
+                server1.vm.hostname = "server1"
+                server1.vm.box = "ubuntu/xenial64"
+                server1.vm.network "private_network", ip: "10.10.172.31"
+
+
+        server1.vm.provider "virtualbox" do |vb|
+                vb.name = "server1"
+                vb.cpus = 2
+                vb.memory = "2048"
+        end
+
+        server1.vm.provision "shell", inline: <<-SHELL
+                apt-get update
+                sudo apt-get install apt-transport-https ca-certificates curl gnupg-agent software-properties-common htop -y
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                sudo apt-get update
+                sudo apt-get install docker-ce docker-ce-cli containerd.io -y
+		echo "10.10.172.10 rancher.int" >> /etc/hosts
+		systemctl start docker
+		systemctl enable docker
+		usermod -aG docker $(whoami)
+        SHELL
+  end
+
+# ----------------------------------------------------------------------------------------
+
+end
