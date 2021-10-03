@@ -1,1 +1,0 @@
-{"virtualbox":{"/vagrant":{"guestpath":"/vagrant","hostpath":"/home/amedov/git/vagrant-configs/Logstash/send_nginx_logs_to_elk_with_manipulation","disabled":false,"__vagrantfile":true}}}
