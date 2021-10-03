@@ -1,0 +1,83 @@
+#
+# For use all Virtual Machines required 4.5 GB RAM
+#
+
+Vagrant.configure("2") do |config|
+
+  config.ssh.insert_key = false
+
+# ---------------- Nginx ----------------------------------------------------------------
+
+  config.vm.define "nginx" do |nginx|
+                nginx.vm.hostname = "nginx"
+                nginx.vm.box = "ubuntu/bionic64"
+                nginx.vm.network "private_network", ip: "172.16.0.10"
+
+        nginx.vm.provider "virtualbox" do |vb|
+                vb.name = "nginx"
+                vb.cpus = 1
+                vb.memory = "512"
+        end
+
+        nginx.vm.provision "file", source: "other_files/nginx.conf", destination: "/tmp/nginx.conf"
+
+        # Install Nginx
+        nginx.vm.provision "shell", inline: <<-SHELL
+                apt-get update
+                apt-get install htop nginx -y
+                mv /tmp/nginx.conf /etc/nginx/nginx.conf
+		systemctl restart nginx
+		systemctl enable nginx
+        SHELL
+  end
+
+# ---------------- Graylog -------------------------------------------------------------------
+
+  config.vm.define "graylog" do |graylog|
+                graylog.vm.hostname = "graylog"
+                graylog.vm.box = "ubuntu/bionic64"
+                graylog.vm.network "private_network", ip: "172.16.0.150"
+		graylog.vm.network "public_network", bridge: "wlo1", ip: "192.168.168.150"
+
+        graylog.vm.provider "virtualbox" do |vb|
+                vb.name = "graylog"
+                vb.cpus = 2
+                vb.memory = "4096"
+        end
+
+        graylog.vm.provision "file", source: "other_files/logstash.conf", destination: "/tmp/logstash.conf"
+        graylog.vm.provision "file", source: "other_files/udp-input-graylog.json", destination: "/tmp/udp-input-graylog.json"
+
+        # Install Docker
+        graylog.vm.provision "shell", inline: <<-SHELL
+                apt-get update
+                apt-get install htop -y
+                curl -fsSL https://get.docker.com/ | sh
+                systemctl start docker
+                systemctl enable docker
+                usermod -aG docker $(whoami)
+                usermod -aG docker vagrant
+        SHELL
+
+	# Install Graylog
+        graylog.vm.provision "shell", inline: <<-SHELL
+                mv /tmp/udp-input-graylog.json /etc/udp-input-graylog.json
+                docker run --name mongo -d mongo:4.2
+                docker run --name elasticsearch -e "http.host=0.0.0.0" -e "discovery.type=single-node" -e "ES_JAVA_OPTS=-Xms512m -Xmx512m" -d docker.elastic.co/elasticsearch/elasticsearch-oss:7.10.2
+                docker run --name graylog --link mongo --link elasticsearch -p 9000:9000 -p 12201:12201/udp -p 1514:1514 -v /etc/udp-input-graylog.json:/usr/share/graylog/data/contentpacks/udp-input-graylog.json -e GRAYLOG_HTTP_EXTERNAL_URI="http://192.168.168.150:9000/" -e "GRAYLOG_CONTENT_PACKS_AUTO_INSTALL=udp-input-graylog.json" -e "GRAYLOG_CONTENT_PACKS_LOADER_ENABLED=true" -e "GRAYLOG_CONTENT_PACKS_DIR=data/contentpacks" -d graylog/graylog:4.1
+        SHELL
+
+        # Install Logstash
+        graylog.vm.provision "shell", inline: <<-SHELL
+		wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | apt-key add -
+		echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-7.x.list
+                apt-get update; apt-get install htop apt-transport-https logstash -y
+                mv /tmp/logstash.conf /etc/logstash/conf.d/logstash.conf
+                /usr/share/logstash/bin/logstash-plugin install logstash-output-gelf
+		systemctl enable logstash
+		systemctl restart logstash
+        SHELL
+
+  end
+
+end
